@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101827">
+    <title>RSA | Cifrado educativo</title>
+    <link rel="stylesheet" href="rsa.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">Criptografía · proyecto RSA</div>
+      <h1>Cifra tus mensajes<br>y archivos.</h1>
+      <p class="intro"> Genera tus llaves y prueba el cifrado RSA de texto o archivos, directamente en tu navegador.</p>
+    </header>
+
+    <div class="layout">
+      <section class="card workspace" aria-label="Herramientas RSA">
+        <div class="tabs" role="tablist" aria-label="Tipo de cifrado">
+          <button class="tab" id="tab-text" role="tab" aria-selected="true" aria-controls="pane-text">Texto</button>
+          <button class="tab" id="tab-file" role="tab" aria-selected="false" aria-controls="pane-file">Archivos</button>
+        </div>
+
+        <section class="pane active" id="pane-text" role="tabpanel" aria-labelledby="tab-text">
+          <h2 class="section-heading">Cifrar o descifrar texto</h2>
+          <p class="hint">El resultado cifrado es una secuencia de números separados por espacios, igual que en el programa C++.</p>
+          <label for="text-input">Mensaje o texto cifrado</label>
+          <textarea id="text-input" placeholder="Escribe aquí tu mensaje..."></textarea>
+          <div class="actions">
+            <button class="button primary" id="encrypt-text">Cifrar texto</button>
+            <button class="button" id="decrypt-text">Descifrar texto</button>
+          </div>
+          <label for="text-output">Resultado</label>
+          <textarea id="text-output" readonly placeholder="Aquí aparecerá el resultado..."></textarea>
+          <div class="actions">
+            <button class="button small" id="copy-output">Copiar resultado</button>
+          </div>
+        </section>
+
+        <section class="pane" id="pane-file" role="tabpanel" aria-labelledby="tab-file">
+          <h2 class="section-heading">Cifrar o descifrar un archivo</h2>
+          <p class="hint">Usa el mismo formato binario híbrido de rsafin.cpp. Se conserva la cabecera de formatos conocidos y el original no se modifica.</p>
+          <label for="file-input">Archivo de entrada</label>
+          <div class="file-picker" id="file-dropzone" aria-label="Zona para soltar un archivo">
+            <div>
+              <p class="drop-prompt">Arrastra y suelta un archivo aquí</p>
+              <p class="drop-divider">o selecciónalo desde tu dispositivo</p>
+              <input id="file-input" type="file">
+              <p class="file-name" id="file-name">No has seleccionado ningún archivo</p>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="button primary" id="encrypt-file">Cifrar y descargar</button>
+            <button class="button" id="decrypt-file">Descifrar y descargar</button>
+          </div>
+          <p class="hint hint-spaced">También se pueden descifrar archivos del formato numérico anterior. Usa la llave privada correspondiente.</p>
+        </section>
+
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+      </section>
+
+      <aside class="card keys" aria-label="Llaves RSA">
+        <h2 class="key-title">Tus llaves RSA</h2>
+        <p class="key-copy">Genera llaves aquí o pega las que generaste con rsafin.cpp. Guárdalas para volver a usarlas.</p>
+        <button class="button primary generate-button" id="generate-keys">Generar llaves</button>
+        <div class="divider"></div>
+        <div class="key-field">
+          <div class="key-label"><span>Llave pública (e, n)</span><button class="button small" data-copy="public-key">Copiar</button></div>
+          <input class="key-value" id="public-key" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Pega e y n, separados por un espacio">
+        </div>
+        <div class="key-field">
+          <div class="key-label"><span>Llave privada (d, n)</span><button class="button small" data-copy="private-key">Copiar</button></div>
+          <input class="key-value" id="private-key" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Pega d y n, separados por un espacio">
+        </div>
+        <div class="notice">Este RSA usa números primos pequeños. El cifrado de archivos es educativo y no protege información real. Guarda ambas llaves; perder la privada impide recuperar los archivos.</div>
+      </aside>
+    </div>
+    <footer>El procesamiento ocurre localmente en tu navegador; los archivos no se envían a un servidor.</footer>
+  </main>
+
+  <script>
+    "use strict";
+
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const statusBox = document.getElementById("status");
+    const fileInput = document.getElementById("file-input");
+    const fileDropzone = document.getElementById("file-dropzone");
+    let droppedFile = null;
+
+    function showStatus(message, isError = false) {
+      statusBox.textContent = message;
+      statusBox.classList.toggle("error", isError);
+      statusBox.style.display = "block";
+    }
+
+    function clearStatus() {
+      statusBox.style.display = "none";
+      statusBox.classList.remove("error");
+    }
+
+    function gcd(a, b) {
+      while (b !== 0) [a, b] = [b, a % b];
+      return a;
+    }
+
+    function isPrime(value) {
+      if (value < 2) return false;
+      if (value % 2 === 0) return value === 2;
+      for (let divisor = 3; divisor * divisor <= value; divisor += 2) {
+        if (value % divisor === 0) return false;
+      }
+      return true;
+    }
+
+    function randomInteger(min, max) {
+      const range = max - min + 1;
+      const limit = Math.floor(0x100000000 / range) * range;
+      const sample = new Uint32Array(1);
+      do {
+        crypto.getRandomValues(sample);
+      } while (sample[0] >= limit);
+      return min + (sample[0] % range);
+    }
+
+    function randomPrime() {
+      let candidate;
+      do candidate = randomInteger(100, 1000);
+      while (!isPrime(candidate));
+      return candidate;
+    }
+
+    function modularPower(base, exponent, modulus) {
+      let result = 1n;
+      let factor = BigInt(base) % modulus;
+      let power = exponent;
+      while (power > 0n) {
+        if (power % 2n === 1n) result = (result * factor) % modulus;
+        factor = (factor * factor) % modulus;
+        power /= 2n;
+      }
+      return result;
+    }
+
+    function modularInverse(value, modulus) {
+      let t = 0;
+      let nextT = 1;
+      let remainder = modulus;
+      let nextR = value;
+      while (nextR !== 0) {
+        const quotient = Math.floor(remainder / nextR);
+        [t, nextT] = [nextT, t - quotient * nextT];
+        [remainder, nextR] = [nextR, remainder - quotient * nextR];
+      }
+      if (remainder !== 1) throw new Error("No se pudo calcular la llave privada.");
+      return ((t % modulus) + modulus) % modulus;
+    }
+
+    function generateKeys() {
+      let p = randomPrime();
+      let q = randomPrime();
+      while (p === q) q = randomPrime();
+
+      const n = p * q;
+      const phi = (p - 1) * (q - 1);
+      let e = 2;
+      while (e < phi && gcd(e, phi) !== 1) e++;
+      if (e >= phi) throw new Error("No se pudo generar la llave pública.");
+
+      const d = modularInverse(e, phi);
+      document.getElementById("public-key").value = `${e} ${n}`;
+      document.getElementById("private-key").value = `${d} ${n}`;
+      showStatus("Llaves generadas. Guarda la llave privada en un lugar seguro.");
+    }
+
+    function getKey(type) {
+      const field = document.getElementById(type === "publicKey" ? "public-key" : "private-key");
+      const match = field.value.trim().match(/^(\d+)\s+(\d+)$/);
+      if (!match) throw new Error(`Escribe la llave ${type === "publicKey" ? "pública" : "privada"} como dos números separados por un espacio.`);
+      const key = { exponent: BigInt(match[1]), modulus: BigInt(match[2]) };
+      if (key.exponent <= 0n || key.modulus < 256n) {
+        throw new Error("Llave inválida: la clave debe ser mayor que 0 y n debe ser al menos 256.");
+      }
+      return key;
+    }
+
+    function encryptText() {
+      const bytes = encoder.encode(document.getElementById("text-input").value);
+      const key = getKey("publicKey");
+      const numbers = Array.from(bytes, byte => modularPower(byte, key.exponent, key.modulus).toString());
+      document.getElementById("text-output").value = numbers.join(" ");
+      showStatus("Texto cifrado correctamente.");
+    }
+
+    function parseCipherNumbers(value) {
+      const trimmed = value.trim();
+      if (!trimmed) throw new Error("Escribe o pega el texto cifrado.");
+      const tokens = trimmed.split(/\s+/);
+      return tokens.map(token => {
+        if (!/^\d+$/.test(token)) throw new Error("El texto cifrado debe contener solo números separados por espacios.");
+        return BigInt(token);
+      });
+    }
+
+    function decryptNumbers(numbers, key) {
+      return numbers.map(number => {
+        if (number < 0n || number >= key.modulus) throw new Error("La llave no corresponde o el texto cifrado es inválido.");
+        const byte = modularPower(number, key.exponent, key.modulus);
+        if (byte > 255n) throw new Error("La llave no corresponde o el texto cifrado es inválido.");
+        return Number(byte);
+      });
+    }
+
+    function decryptText() {
+      const numbers = parseCipherNumbers(document.getElementById("text-input").value);
+      const key = getKey("privateKey");
+      const bytes = Uint8Array.from(decryptNumbers(numbers, key));
+      let message;
+      try {
+        message = decoder.decode(bytes);
+      } catch {
+        throw new Error("No se pudo descifrar el texto. Comprueba que la llave privada sea correcta.");
+      }
+      document.getElementById("text-output").value = message;
+      showStatus("Texto descifrado correctamente.");
+    }
+
+    function selectedFile() {
+      const file = droppedFile || fileInput.files[0];
+      if (!file) throw new Error("Selecciona un archivo primero.");
+      if (file.size === 0) throw new Error("El archivo está vacío.");
+      return file;
+    }
+
+    function downloadBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    const FOOTER_SIZE = 13;
+    const FILE_MARKER = [0x52, 0x53, 0x41, 0x31];
+    const MAX_FILE_MODULUS = 0xffffffffn;
+
+    function fileModulus(key) {
+      if (key.modulus > MAX_FILE_MODULUS) {
+        throw new Error("Para cifrar archivos, n no puede ser mayor que 4294967295.");
+      }
+      if (key.modulus <= 2n) throw new Error("La llave no permite cifrar la semilla del archivo.");
+      return key.modulus;
+    }
+
+    function headerLength(filename, fileLength) {
+      const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+      const lengths = { ".bmp": 54, ".png": 33, ".jpg": 20, ".jpeg": 20, ".gif": 13, ".wav": 44 };
+      return Math.min(lengths[extension] || 0, fileLength);
+    }
+
+    function splitExtension(filename) {
+      const separator = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+      const dot = filename.lastIndexOf(".");
+      if (dot < 0 || dot < separator) return [filename, ""];
+      return [filename.slice(0, dot), filename.slice(dot)];
+    }
+
+    function encryptedFilename(filename) {
+      const [base, extension] = splitExtension(filename);
+      return `${base}_enc${extension}`;
+    }
+
+    function decryptedFilename(filename) {
+      if (filename.endsWith(".enc")) filename = filename.slice(0, -4);
+      let [base, extension] = splitExtension(filename);
+      if (base.endsWith("_enc")) base = base.slice(0, -4);
+      return `${base}_dec${extension}`;
+    }
+
+    function randomSeed(modulus) {
+      const range = Number(modulus - 2n);
+      return randomInteger(0, range - 1) + 2;
+    }
+
+    function writeU32(bytes, offset, value) {
+      new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(offset, value >>> 0, true);
+    }
+
+    function readU32(bytes, offset) {
+      return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+    }
+
+    function seedChecksum(seed) {
+      return Math.imul(seed, 2654435761) >>> 0;
+    }
+
+    class MersenneTwister {
+      constructor(seed) {
+        this.state = new Uint32Array(624);
+        this.state[0] = seed >>> 0;
+        for (let i = 1; i < this.state.length; i++) {
+          const previous = this.state[i - 1] ^ (this.state[i - 1] >>> 30);
+          this.state[i] = (Math.imul(1812433253, previous) + i) >>> 0;
+        }
+        this.index = this.state.length;
+      }
+
+      next() {
+        if (this.index >= this.state.length) this.twist();
+        let value = this.state[this.index++];
+        value ^= value >>> 11;
+        value ^= (value << 7) & 0x9d2c5680;
+        value ^= (value << 15) & 0xefc60000;
+        value ^= value >>> 18;
+        return value >>> 0;
+      }
+
+      twist() {
+        for (let i = 0; i < this.state.length; i++) {
+          const combined = (this.state[i] & 0x80000000) | (this.state[(i + 1) % 624] & 0x7fffffff);
+          let value = this.state[(i + 397) % 624] ^ (combined >>> 1);
+          if (combined & 1) value ^= 0x9908b0df;
+          this.state[i] = value >>> 0;
+        }
+        this.index = 0;
+      }
+    }
+
+    function xorFileData(data, headerSize, seed) {
+      const result = data.slice();
+      const generator = new MersenneTwister(seed);
+      for (let position = headerSize; position < result.length; position++) {
+        result[position] ^= generator.next() >>> 24;
+      }
+      return result;
+    }
+
+    async function encryptFile() {
+      const file = selectedFile();
+      const key = getKey("publicKey");
+      const modulus = fileModulus(key);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.length >= FOOTER_SIZE && FILE_MARKER.every((byte, i) => bytes[bytes.length - FOOTER_SIZE + i] === byte)) {
+        throw new Error("El archivo ya parece estar cifrado.");
+      }
+
+      const seed = randomSeed(modulus);
+      const encryptedSeed = Number(modularPower(BigInt(seed), key.exponent, modulus));
+      const headerSize = headerLength(file.name, bytes.length);
+      const encryptedData = xorFileData(bytes, headerSize, seed);
+      const output = new Uint8Array(encryptedData.length + FOOTER_SIZE);
+      output.set(encryptedData);
+      output.set(FILE_MARKER, encryptedData.length);
+      output[encryptedData.length + 4] = headerSize;
+      writeU32(output, encryptedData.length + 5, encryptedSeed);
+      writeU32(output, encryptedData.length + 9, seedChecksum(seed));
+
+      const outputName = encryptedFilename(file.name);
+      downloadBlob(new Blob([output]), outputName);
+      showStatus(`Archivo cifrado. Se descargó ${outputName}.`);
+    }
+
+    async function decryptFile() {
+      const file = selectedFile();
+      const key = getKey("privateKey");
+      const modulus = fileModulus(key);
+      const input = new Uint8Array(await file.arrayBuffer());
+      const outputName = decryptedFilename(file.name);
+      const hasFooter = input.length >= FOOTER_SIZE &&
+        FILE_MARKER.every((byte, i) => input[input.length - FOOTER_SIZE + i] === byte);
+
+      if (!hasFooter) {
+        const numbers = parseCipherNumbers(decoder.decode(input));
+        const bytes = Uint8Array.from(decryptNumbers(numbers, key));
+        downloadBlob(new Blob([bytes]), outputName);
+        showStatus(`Archivo descifrado (formato numérico anterior). Se descargó ${outputName}.`);
+        return;
+      }
+
+      const footerOffset = input.length - FOOTER_SIZE;
+      const headerSize = input[footerOffset + 4];
+      const encryptedSeed = readU32(input, footerOffset + 5);
+      const checksum = readU32(input, footerOffset + 9);
+      const data = input.slice(0, footerOffset);
+      if (BigInt(encryptedSeed) >= modulus || headerSize > data.length) {
+        throw new Error("La llave no corresponde o el archivo está dañado.");
+      }
+
+      const seed = Number(modularPower(BigInt(encryptedSeed), key.exponent, modulus));
+      if (seedChecksum(seed) !== checksum) throw new Error("La llave privada no corresponde a este archivo.");
+      const restored = xorFileData(data, headerSize, seed);
+      downloadBlob(new Blob([restored]), outputName);
+      showStatus(`Archivo descifrado. Se descargó ${outputName}.`);
+    }
+
+    function runAction(action) {
+      clearStatus();
+      try {
+        const result = action();
+        if (result instanceof Promise) result.catch(error => showStatus(error.message, true));
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    }
+
+    document.getElementById("generate-keys").addEventListener("click", () => runAction(generateKeys));
+    document.getElementById("encrypt-text").addEventListener("click", () => runAction(encryptText));
+    document.getElementById("decrypt-text").addEventListener("click", () => runAction(decryptText));
+    document.getElementById("encrypt-file").addEventListener("click", () => runAction(encryptFile));
+    document.getElementById("decrypt-file").addEventListener("click", () => runAction(decryptFile));
+    fileInput.addEventListener("change", event => {
+      droppedFile = null;
+      const file = event.target.files[0];
+      document.getElementById("file-name").textContent = file ? `${file.name} · ${file.size.toLocaleString()} bytes` : "No has seleccionado ningún archivo";
+      clearStatus();
+    });
+
+    fileDropzone.addEventListener("dragover", event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      fileDropzone.classList.add("dragging");
+    });
+
+    fileDropzone.addEventListener("dragleave", event => {
+      if (!fileDropzone.contains(event.relatedTarget)) {
+        fileDropzone.classList.remove("dragging");
+      }
+    });
+
+    fileDropzone.addEventListener("drop", event => {
+      event.preventDefault();
+      fileDropzone.classList.remove("dragging");
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length !== 1) {
+        showStatus(files.length ? "Suelta un solo archivo a la vez." : "No se detectó ningún archivo. Intenta soltarlo de nuevo.", true);
+        return;
+      }
+
+      droppedFile = files[0];
+      fileInput.value = "";
+      document.getElementById("file-name").textContent = `${droppedFile.name} · ${droppedFile.size.toLocaleString()} bytes`;
+      showStatus("Archivo listo. Elige cifrar o descifrar.");
+    });
+
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(item => item.setAttribute("aria-selected", String(item === tab)));
+        document.querySelectorAll(".pane").forEach(pane => pane.classList.toggle("active", pane.id === tab.getAttribute("aria-controls")));
+        clearStatus();
+      });
+    });
+
+    document.querySelectorAll("[data-copy]").forEach(button => {
+      button.addEventListener("click", async () => {
+        const value = document.getElementById(button.dataset.copy).value.trim();
+        if (!value) {
+          showStatus("No hay ninguna llave para copiar.", true);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(value);
+          showStatus("Llave copiada al portapapeles.");
+        } catch {
+          showStatus("No se pudo acceder al portapapeles. Selecciona y copia la llave manualmente.", true);
+        }
+      });
+    });
+
+    document.getElementById("copy-output").addEventListener("click", async () => {
+      const value = document.getElementById("text-output").value;
+      if (!value) {
+        showStatus("No hay ningún resultado para copiar.", true);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        showStatus("Resultado copiado al portapapeles.");
+      } catch {
+        showStatus("No se pudo acceder al portapapeles. Selecciona y copia el resultado manualmente.", true);
+      }
+    });
+  </script>
+</body>
+</html>
