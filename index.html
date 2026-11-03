@@ -62,16 +62,24 @@
 
       <aside class="card keys" aria-label="Llaves RSA">
         <h2 class="key-title">Tus llaves RSA</h2>
-        <p class="key-copy">Genera llaves aquí o pega las que generaste con rsafin.cpp. Guárdalas para volver a usarlas.</p>
+        <p class="key-copy">La llave pública se puede compartir y se usa para cifrar. La llave privada se mantiene secreta y se usa para descifrar; no la compartas.</p>
         <button class="button primary generate-button" id="generate-keys">Generar llaves</button>
         <div class="divider"></div>
         <div class="key-field">
           <div class="key-label"><span>Llave pública (e, n)</span><button class="button small" data-copy="public-key">Copiar</button></div>
+          <p class="key-description">Para cifrar. Esta llave puedes compartirla.</p>
           <input class="key-value" id="public-key" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Pega e y n, separados por un espacio">
         </div>
         <div class="key-field">
-          <div class="key-label"><span>Llave privada (d, n)</span><button class="button small" data-copy="private-key">Copiar</button></div>
-          <input class="key-value" id="private-key" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Pega d y n, separados por un espacio">
+          <div class="key-label">
+            <span>Llave privada (d, n)</span>
+            <div class="key-actions">
+              <button class="button small" id="toggle-private-key" type="button" aria-controls="private-key" aria-pressed="false">Mostrar</button>
+              <button class="button small" data-copy="private-key" type="button">Copiar</button>
+            </div>
+          </div>
+          <p class="key-description private-description">Para descifrar. Se oculta en pantalla por defecto; no la compartas.</p>
+          <input class="key-value" id="private-key" type="password" inputmode="numeric" autocomplete="new-password" spellcheck="false" placeholder="Pega d y n, separados por un espacio" aria-label="Llave privada, oculta">
         </div>
         <div class="notice">Este RSA usa números primos pequeños. El cifrado de archivos es educativo y no protege información real. Guarda ambas llaves; perder la privada impide recuperar los archivos.</div>
       </aside>
@@ -171,6 +179,11 @@
       const d = modularInverse(e, phi);
       document.getElementById("public-key").value = `${e} ${n}`;
       document.getElementById("private-key").value = `${d} ${n}`;
+      document.getElementById("private-key").type = "password";
+      document.getElementById("private-key").setAttribute("aria-label", "Llave privada, oculta");
+      const privateKeyToggle = document.getElementById("toggle-private-key");
+      privateKeyToggle.textContent = "Mostrar";
+      privateKeyToggle.setAttribute("aria-pressed", "false");
       showStatus("Llaves generadas. Guarda la llave privada en un lugar seguro.");
     }
 
@@ -444,6 +457,16 @@
       fileInput.value = "";
       document.getElementById("file-name").textContent = `${droppedFile.name} · ${droppedFile.size.toLocaleString()} bytes`;
       showStatus("Archivo listo. Elige cifrar o descifrar.");
+    });
+
+    document.getElementById("toggle-private-key").addEventListener("click", event => {
+      const input = document.getElementById("private-key");
+      const button = event.currentTarget;
+      const visible = input.type === "password";
+      input.type = visible ? "text" : "password";
+      input.setAttribute("aria-label", visible ? "Llave privada, visible" : "Llave privada, oculta");
+      button.textContent = visible ? "Ocultar" : "Mostrar";
+      button.setAttribute("aria-pressed", String(visible));
     });
 
     document.querySelectorAll(".tab").forEach(tab => {
