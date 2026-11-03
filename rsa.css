@@ -208,6 +208,9 @@
     .key-title { margin: 0 0 5px; font-size: 1.1rem; }
     .key-copy { margin: 0 0 18px; color: var(--muted); font-size: .88rem; line-height: 1.5; }
     .key-field { margin-bottom: 15px; }
+    .key-description { margin: -2px 0 7px; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+    .private-description { color: var(--danger); }
+    .key-actions { display: flex; gap: 6px; }
 
     .key-label {
       display: flex;
@@ -275,6 +278,7 @@
       }
 
       .layout { grid-template-columns: 1fr; gap: 16px; margin-top: 26px; }
+      .keys { order: -1; }
       .workspace, .keys { padding: 18px; }
       .card { border-radius: 15px; }
     }
